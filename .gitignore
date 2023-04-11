@@ -1,3 +1,7 @@
 .ipynb_checkpoints
+.DS_Store
 spark-warehouse
 data
+pages
+assets
+derby
