@@ -5,3 +5,5 @@ data
 pages
 assets
 derby
+derby.log
+*.pyc
