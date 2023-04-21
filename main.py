@@ -9,80 +9,112 @@ NOTE_TYPES = [
     '✍️OwnPosts', '📝CuratedNotes', '✒️SummarizedBooks', '🗞️Articles', '📚Books', 
     '🎙️Podcasts', '📜Papers', '🗣️Talks', '🦜FavoriteQuotes']
 
-# spark = (
-#     SparkSession.builder
-#     .master("local[*]")
-#     .config("spark.sql.catalogImplementation", "hive")
-#     .config("spark.sql.warehouse.dir", DB_PATH)
-#     .config("spark.hadoop.javax.jdo.option.ConnectionURL", f"jdbc:derby:{DERBY_DB_DIR};create=true") 
-#     .enableHiveSupport()
-#     .getOrCreate())
-# # Not entirely sure yet why I need this but related to 'saveAsTable' below.
-# spark.sql("set hive.exec.dynamic.partition.mode=nonstrict") 
-# spark.sql("USE obsidian_metrics_db")
+class StatsCalculator():
+    def __init__(self, spark_obj, notes_path):
+        self.spark = spark_obj
+        self.notes_path = notes_path
+        
+    def create_hive_db(self):
+        """
+        I will only run this manually at the beginning of the project.
+        """
+        spark.sql("""
+            CREATE DATABASE IF NOT EXISTS obsidian_metrics_db LOCATION '/home/jovyan/work/spark-warehouse/';
+            USE obsidian_metrics_db;
+            CREATE TABLE IF NOT EXISTS files_metrics (
+                date DATE,
+                filename STRING,i
+                word_count INT,
+                type STRING,
+                tags ARRAY<string>
+            )
+            PARTITIONED BY (year INT, month INT)
+            STORED AS PARQUET;
+        """)
 
-def create_hive_db():
-    """
-    I will only run this manually at the beginning of the project.
-    """
-    spark.sql("""
-        CREATE DATABASE IF NOT EXISTS obsidian_metrics_db LOCATION '/home/jovyan/work/spark-warehouse/';
-        USE obsidian_metrics_db;
-        CREATE TABLE IF NOT EXISTS files_metrics (
-            date DATE,
-            filename STRING,i
-            word_count INT,
-            type STRING,
-            tags ARRAY<string>
-        )
-        PARTITIONED BY (year INT, month INT)
-        STORED AS PARQUET;
-    """)
+    def run(self):
+        spark.read.text(self.notes_path, wholetext=True)
+        self._add_filename_from_path()
+        pass
 
-def add_filename_from_path(df):
-    return (
-        df
-        .withColumn(
-            "filename", 
-            f.regexp_replace(
-                f.reverse(
-                    f.split(f.input_file_name(), '/')
-                    )[0],
-                "%20", " ")))
+    def _add_filename_from_path(self, df):
+        """
+        Is this the best that can be done to avoid nesting calls?
+        """
+        return (df
+            .select(f.reverse(f.split(f.input_file_name(), '/'))[0].alias("filename"))
+            .select(f.regexp_replace("filename", "%20", " ").alias("filename")))
 
-def clean_up_tag(tag):
-    return (
-         tag
-        .pipe(f.regexp_replace, "\[\[|\]\]", "")
-        .pipe(f.regexp_replace, "\#", "")
-        .pipe(f.regexp_replace, "\.$", "")
-        .pipe(f.trim))
+    def _extract_clean_tags_into_array(self, df_taglines):
+        """
+        df[[filename, value]], with value containing "Tags::..."
+        """
+        def _clean_up_tag(tag_col):
+            return f.trim(f.regexp_replace(tag_col, "\[\[|\]\]|\#|\.$", ""))
+        
+        return (
+            df_taglines
+            .select(f.split("value", "::")[1].alias("tags"))
+            .select(f.split("tags", "\s*,\s*\[\[|\s*,\s*\#").alias("tags"))
+            .select(f.transform("tags", _clean_up_tag).alias("tags")))
 
-def extract_tags_into_array(tags_col):
-    return (
-        tags_col
-        .pipe(f.split, "::")[1]
-        .pipe(f.split, "\s*,\s*\[\[|\s*,\s*\#"))
 
-def add_tags(df):
-    """
-    df[filename, value], where each row is a line of the file.
-    """
-    return (
-        df
-        .filter(f.col("value").rlike("Tags::"))
-        .withColumn("tags",
-            f.col("value")
-            .pipe(extract_tags_into_array)
-            .pipe(f.transform, clean_up_tag)
-            .pipe(f.array_remove, ""))
-        .withColumn("type", 
-                    f.element_at(
-                        f.array_intersect(f.array(*[f.lit(t) for t in NOTE_TYPES]), f.col("tags")),
-                        1
-                    )
-        )
-        .withColumn("tags", f.array_except(f.col("tags"), f.array(f.col("type")))))
+    # def _add_tags(df):
+    #     """
+    #     df[[filename, value]], where each row is a line of the file.
+    #     """
+    #     return (
+    #         df
+    #         .filter(f.col("value").rlike("Tags::"))
+    #         .select
+
+    #         .withColumn("tags",
+    #             f.col("value")
+    #             .pipe(extract_tags_into_array)
+    #             .pipe(f.transform, clean_up_tag)
+    #             .pipe(f.array_remove, ""))
+    #         .withColumn("type", 
+    #                     f.element_at(
+    #                         f.array_intersect(f.array(*[f.lit(t) for t in NOTE_TYPES]), f.col("tags")),
+    #                         1
+    #                     )
+    #         )
+    #         .withColumn("tags", f.array_except(f.col("tags"), f.array(f.col("type")))))
+
+
+# def clean_up_tag(tag):
+#     return (
+#          tag
+#         .pipe(f.regexp_replace, "\[\[|\]\]", "")
+#         .pipe(f.regexp_replace, "\#", "")
+#         .pipe(f.regexp_replace, "\.$", "")
+#         .pipe(f.trim))
+
+# def extract_tags_into_array(tags_col):
+#     return (
+#         tags_col
+#         .pipe(f.split, "::")[1]
+#         .pipe(f.split, "\s*,\s*\[\[|\s*,\s*\#"))
+
+# def add_tags(df):
+#     """
+#     df[filename, value], where each row is a line of the file.
+#     """
+#     return (
+#         df
+#         .filter(f.col("value").rlike("Tags::"))
+#         .withColumn("tags",
+#             f.col("value")
+#             .pipe(extract_tags_into_array)
+#             .pipe(f.transform, clean_up_tag)
+#             .pipe(f.array_remove, ""))
+#         .withColumn("type", 
+#                     f.element_at(
+#                         f.array_intersect(f.array(*[f.lit(t) for t in NOTE_TYPES]), f.col("tags")),
+#                         1
+#                     )
+#         )
+#         .withColumn("tags", f.array_except(f.col("tags"), f.array(f.col("type")))))
 
 # # Merge the two dataframes
 # file_metrics_df = file_words_df.join(tags_df, on="filename", how="left")
@@ -306,12 +338,8 @@ def add_tags(df):
 
 # fig.write_image("/home/jovyan/work/assets/words_by_topic_last_7_days.svg")
 
-# def main():
-#     pass
 
-# # Write Python main
-# if __name__ == "__main__":
-#     word_metrics_by_file = (
+#  word_metrics_by_file = (
 #         spark.read.text("/home/jovyan/work/pages/", wholetext=True)
 #         .transform(add_filename_from_path)
 #         .withColumn("word_count", f.size(f.split(f.col('value'), ' ')))
@@ -321,3 +349,21 @@ def add_tags(df):
 #     )
 
 #     main()
+
+
+if __name__ == "__main__":
+    spark = (
+        SparkSession.builder
+        .master("local[*]")
+        .config("spark.sql.catalogImplementation", "hive")
+        .config("spark.sql.warehouse.dir", DB_PATH)
+        .config("spark.hadoop.javax.jdo.option.ConnectionURL", f"jdbc:derby:{DERBY_DB_DIR};create=true") 
+        .enableHiveSupport()
+        .getOrCreate())
+    # Not entirely sure yet why I need this but related to 'saveAsTable' below.
+    spark.sql("set hive.exec.dynamic.partition.mode=nonstrict") 
+    spark.sql("USE obsidian_metrics_db")
+
+    StatsCalculator(spark).run()
+
+   
