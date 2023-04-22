@@ -19,7 +19,7 @@
             "upgradePackages": true
 		},
 		"ghcr.io/devcontainers-contrib/features/zsh-plugins:0": {
-			"username": "jovyan",
+			"username": "jovyan"
 		}
 	},
 	"customizations": {
@@ -29,7 +29,9 @@
 				"GitHub.copilot-nightly"
 			]
 		}
-	}
+	},
+	"workspaceMount": "source=${localWorkspaceFolder},target=/home/jovyan/work,type=bind",
+	"workspaceFolder": "/home/jovyan/work"
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
