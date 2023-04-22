@@ -33,17 +33,35 @@ class StatsCalculator():
         """)
 
     def run(self):
-        spark.read.text(self.notes_path, wholetext=True)
-        self._add_filename_from_path()
-        pass
+       note_metrics_df = self._get_note_metrics()
+
+    def _get_note_metrics(self):
+        words_df = (
+            self.spark.read.text(self.notes_path, wholetext=True)
+            .transform(self._add_filename_from_path)
+            .select(
+                "filename",
+                f.size(f.split("value", ' ')).alias("word_count")))
+        tags_df = (
+            self.spark.read.text(self.notes_path, wholetext=False)
+            .filter(f.col("value").rlike("Tags::"))
+            .transform(self._add_filename_from_path)
+            .transform(self._extract_clean_tags_into_array)
+            .transform(self._move_note_type_tag_to_own_column)
+            .select("filename", "tags", "type"))
+        return (
+            words_df.join(tags_df, on="filename", how="left")
+            .select("*", f.current_date().alias("date")))
 
     def _add_filename_from_path(self, df):
         """
         Is this the best that can be done to avoid nesting calls?
+        Repeated "withColumn" can have an impact on performance, 
+        since Spark DFs are immutable.
         """
         return (df
-            .select(f.reverse(f.split(f.input_file_name(), '/'))[0].alias("filename"))
-            .select(f.regexp_replace("filename", "%20", " ").alias("filename")))
+            .select("*", f.reverse(f.split(f.input_file_name(), '/'))[0].alias("filename"))
+            .withColumn("filename", f.regexp_replace("filename", "%20", " ")))
 
     def _extract_clean_tags_into_array(self, df_taglines):
         """
@@ -54,67 +72,24 @@ class StatsCalculator():
         
         return (
             df_taglines
-            .select(f.split("value", "::")[1].alias("tags"))
-            .select(f.split("tags", "\s*,\s*\[\[|\s*,\s*\#").alias("tags"))
-            .select(f.transform("tags", _clean_up_tag).alias("tags")))
+            .select("*", f.split("value", "::")[1].alias("tags"))
+            .withColumn("tags", f.split("tags", "\s*,\s*\[\[|\s*,\s*\#"))
+            .withColumn("tags", f.transform("tags", _clean_up_tag).alias("tags")))
+    
+    def _move_note_type_tag_to_own_column(self, df_tagarray):
+        """
+        df[[filename, tags]], with tags being an array of strings.
+        """
+        return (
+            df_tagarray
+            .select('*',
+                f.array_intersect(f.array(*[f.lit(t) for t in NOTE_TYPES]), "tags").alias("type"))
+            .withColumn("type", f.element_at("type", 1))
+            .withColumn("tags", f.array_except("tags", f.array("type"))))
 
 
-    # def _add_tags(df):
-    #     """
-    #     df[[filename, value]], where each row is a line of the file.
-    #     """
-    #     return (
-    #         df
-    #         .filter(f.col("value").rlike("Tags::"))
-    #         .select
-
-    #         .withColumn("tags",
-    #             f.col("value")
-    #             .pipe(extract_tags_into_array)
-    #             .pipe(f.transform, clean_up_tag)
-    #             .pipe(f.array_remove, ""))
-    #         .withColumn("type", 
-    #                     f.element_at(
-    #                         f.array_intersect(f.array(*[f.lit(t) for t in NOTE_TYPES]), f.col("tags")),
-    #                         1
-    #                     )
-    #         )
-    #         .withColumn("tags", f.array_except(f.col("tags"), f.array(f.col("type")))))
 
 
-# def clean_up_tag(tag):
-#     return (
-#          tag
-#         .pipe(f.regexp_replace, "\[\[|\]\]", "")
-#         .pipe(f.regexp_replace, "\#", "")
-#         .pipe(f.regexp_replace, "\.$", "")
-#         .pipe(f.trim))
-
-# def extract_tags_into_array(tags_col):
-#     return (
-#         tags_col
-#         .pipe(f.split, "::")[1]
-#         .pipe(f.split, "\s*,\s*\[\[|\s*,\s*\#"))
-
-# def add_tags(df):
-#     """
-#     df[filename, value], where each row is a line of the file.
-#     """
-#     return (
-#         df
-#         .filter(f.col("value").rlike("Tags::"))
-#         .withColumn("tags",
-#             f.col("value")
-#             .pipe(extract_tags_into_array)
-#             .pipe(f.transform, clean_up_tag)
-#             .pipe(f.array_remove, ""))
-#         .withColumn("type", 
-#                     f.element_at(
-#                         f.array_intersect(f.array(*[f.lit(t) for t in NOTE_TYPES]), f.col("tags")),
-#                         1
-#                     )
-#         )
-#         .withColumn("tags", f.array_except(f.col("tags"), f.array(f.col("type")))))
 
 # # Merge the two dataframes
 # file_metrics_df = file_words_df.join(tags_df, on="filename", how="left")
