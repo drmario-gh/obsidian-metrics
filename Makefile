@@ -25,7 +25,6 @@ compute-daily-stats:
 	  --user ${UID} \
 	  --group-add users \
 	  -it custom-all-spark-notebook:2023-03-06  start.sh python work/main.py
-	  
 
 copy-stats-back:
 	cp assets/* ${ASSETS_VAULT_PATH}

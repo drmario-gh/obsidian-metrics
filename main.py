@@ -21,7 +21,7 @@ class StatsCalculator():
         self.spark = spark_obj
         self.notes_path = notes_path
         
-    def create_hive_db_and_table(self):
+    def create_hive_db_and_table_if_not_exists(self):
         """
         I will only run this manually at the beginning of the project.
         Weird, Spark SQL doesn't support multiple SQL statements at once?
@@ -43,8 +43,9 @@ class StatsCalculator():
         """)
 
     def run(self):
+        self.create_hive_db_and_table_if_not_exists()
         metrics_df = self._get_note_metrics()
-        self._save_to_hive(metrics_df)
+        # self._save_to_hive(metrics_df)
 
         metrics_by_type_df = self._get_metrics_by_type(metrics_df)
         self._plot_metric_by_type('reading_hours', metrics_by_type_df)
