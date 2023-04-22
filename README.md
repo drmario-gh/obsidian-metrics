@@ -19,7 +19,7 @@ You will need Docker.
 
 The code will copy your pages from your Obsidian vault to this folder, and then run Spark in local mode (but with parallelization) to compute the metrics. From those metrics, it will create several SVG files that it will copy back to your assets folder in your vault.
 
-If you need to customize stuff on top of it, now that **I also added a VSCode devcontainer config**. And I have tests! What else can you ask for?
+If you need to customize stuff on top of it, know that **I also added a VSCode devcontainer config**. And I have tests! What else can you ask for?
 
 ## Do you really need PySpark for this?
 Of course not.
