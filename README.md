@@ -1,6 +1,6 @@
 # 📊 Obsidian-metrics
 PySpark code to compute metrics from my Obsidian vault.
-Available at [Second brain stats - Dr. Mario's 🧠](https://brain.drmario.tech/pages/Second+brain+stats)
+You can nose around at [Second brain stats - Dr. Mario's 🧠](https://brain.drmario.tech/pages/Second+brain+stats)
 ![](web_shot.png)
 
 ## Want to use it?
@@ -19,7 +19,7 @@ You will need Docker.
 
 The code will copy your pages from your Obsidian vault to this folder, and then run Spark in local mode (but with parallelization) to compute the metrics. From those metrics, it will create several SVG files that it will copy back to your assets folder in your vault.
 
-And I have tests! What else can you ask for?
+If you need to customize stuff on top of it, now that **I also added a VSCode devcontainer config**. And I have tests! What else can you ask for?
 
 ## Do you really need PySpark for this?
 Of course not.
