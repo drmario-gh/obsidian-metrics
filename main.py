@@ -44,7 +44,7 @@ class StatsCalculator():
     def run(self):
         self.create_hive_db_and_table_if_not_exists()
         metrics_df = self._get_note_metrics()
-        self._save_to_hive(metrics_df)
+        # self._save_to_hive(metrics_df)
 
         metrics_by_type_df = self._get_metrics_by_type(metrics_df)
         self._plot_metric_by_type('reading_hours', metrics_by_type_df)
@@ -128,7 +128,7 @@ class StatsCalculator():
                 f.sum("word_count").alias("total_words"),
                 f.count("filename").alias("total_pages"))
             .select(
-                f.when(f.col("type").isNull(), "Other").otherwise(f.col("type")).alias("type"),
+                f.when(f.col("type").isNull(), "No type").otherwise(f.col("type")).alias("type"),
                 f.round(f.col("total_words") / AVG_WORDS_PER_MINUTE_ADULTS / 60, 2).alias("reading_hours"),
                 "total_pages")
             .orderBy("reading_hours", ascending=False))
@@ -198,6 +198,7 @@ class StatsCalculator():
         
         
     def _plot_top_5_word_count_diff_7_days(self, df_diff_7_days, color_map=None):
+        df_diff_7_days.loc[df_diff_7_days["tag"]== '', "tag"] = "Untagged"
         fig = px.bar(df_diff_7_days, x="tag", y="diff", color="tag", text="diff")
         fig.update_traces(texttemplate='%{text}', textposition='outside')
         fig.update_layout(
