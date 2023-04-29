@@ -44,7 +44,7 @@ class StatsCalculator():
     def run(self):
         self.create_hive_db_and_table_if_not_exists()
         metrics_df = self._get_note_metrics()
-        # self._save_to_hive(metrics_df)
+        self._save_to_hive(metrics_df)
 
         metrics_by_type_df = self._get_metrics_by_type(metrics_df)
         self._plot_metric_by_type('reading_hours', metrics_by_type_df)
