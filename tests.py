@@ -24,7 +24,7 @@ def test_add_filename_from_path(spark):
 def test_extract_clean_tags_into_array(spark):
     expected_out = pd.DataFrame({
         'tags': [
-            ['🗞️Articles', 'A topic', 'Another topic'],
+            ['🗞️Articles', 'A topic', 'Another topic', 'And another topic'],
             ['📚Books', '✒️SummarizedBooks', 'A topic', 'Another topic']]})
     stats_calculator = StatsCalculator(
         spark_obj=spark,
@@ -42,22 +42,23 @@ def test_extract_clean_tags_into_array(spark):
         check_like=True)
 
 def test_add_note_type_tag(spark):
-    expected_out = pd.DataFrame({
-        'type': ['🗞️Articles', '✒️SummarizedBooks'],
-        'tags': [
-            ['A topic', 'Another topic'],
-            ['📚Books', 'A topic', 'Another topic']]})
-    stats_calculator = StatsCalculator(
-        spark_obj=spark,
-        notes_path='fixtures/')
-    df = spark.createDataFrame(
+    input_df = spark.createDataFrame(
         data=[
-            ('one note', ['🗞️Articles', 'A topic', 'Another topic']),
+            ('one note', ['🗞️Articles', 'A topic', 'Another topic', 'And another topic']),
             ('another note', ['📚Books', '✒️SummarizedBooks', 'A topic', 'Another topic'])
         ],
         schema=['filename', 'tags'])
+    expected_out = pd.DataFrame({
+        'type': ['🗞️Articles', '✒️SummarizedBooks'],
+        'tags': [
+            ['A topic', 'Another topic', 'And another topic'],
+            ['A topic', 'Another topic']]})
+    stats_calculator = StatsCalculator(
+        spark_obj=spark,
+        notes_path='fixtures/')
 
-    out = stats_calculator._move_note_type_tag_to_own_column(df)
+
+    out = stats_calculator._move_note_type_tag_to_own_column(input_df)
 
     pd.testing.assert_frame_equal(
         out.toPandas()[["tags", "type"]].sort_values(by='tags').reset_index(drop=True), 
@@ -69,10 +70,10 @@ def test_get_note_metrics(spark):
     expected_out = (
         pd.DataFrame({
             'filename': ['another note.md', 'one note.md'],
-            'word_count': [10, 10],
+            'word_count': [13, 10],
             'tags': [
-                ['A topic', 'Another topic'],
-                ['📚Books', 'A topic', 'Another topic']],
+                ['A topic', 'Another topic', 'And another topic'],
+                ['A topic', 'Another topic']],
             'type': ['🗞️Articles', '✒️SummarizedBooks']})
         .assign(
             word_count=lambda x: x['word_count'].astype('int32'),
