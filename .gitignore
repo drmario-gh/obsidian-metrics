@@ -3,7 +3,9 @@
 spark-warehouse
 data
 pages
+raw highlights
 assets
 derby
 derby.log
 *.pyc
+eda.ipynb

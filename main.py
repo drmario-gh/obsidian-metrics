@@ -9,6 +9,7 @@ DB_PATH = f'{DEVCONTAINER_WORKSPACE_PATH}/spark-warehouse'
 DERBY_DB_PATH = f'{DEVCONTAINER_WORKSPACE_PATH}/derby'
 PLOTS_PATH = f'{DEVCONTAINER_WORKSPACE_PATH}/assets'
 NOTES_PATH = f'{DEVCONTAINER_WORKSPACE_PATH}/pages'
+RAW_HIGHLIGHTS_PATH = f'{DEVCONTAINER_WORKSPACE_PATH}/raw highlights'
 
 AVG_WORDS_PER_MINUTE_ADULTS = 238  #https://www.sciencedirect.com/science/article/abs/pii/S0749596X19300786
 NOTE_TYPES = [
@@ -19,6 +20,7 @@ class StatsCalculator():
     def __init__(self, spark_obj, notes_path):
         self.spark = spark_obj
         self.notes_path = notes_path
+        self.notes_folder_name = notes_path.split('/')[-1].replace(' ', '_')
         
     def create_hive_db_and_table_if_not_exists(self):
         """
@@ -29,8 +31,8 @@ class StatsCalculator():
             CREATE DATABASE IF NOT EXISTS obsidian_metrics_db LOCATION '{DB_PATH}';
         """)
         self.spark.sql("USE obsidian_metrics_db;")
-        self.spark.sql("""
-            CREATE TABLE IF NOT EXISTS files_metrics (
+        self.spark.sql(f"""
+            CREATE TABLE IF NOT EXISTS {self.notes_folder_name}_metrics (
                 date DATE,
                 filename STRING,
                 word_count INT,
@@ -57,16 +59,19 @@ class StatsCalculator():
         df_diff = self._get_top_5_word_count_diff_7_days()
         self._plot_top_5_word_count_diff_7_days(df_diff)
 
+
     def _get_note_metrics(self):
         words_df = (
-            self.spark.read.text(self.notes_path, wholetext=True)
+            self.spark.read.text(
+                self.notes_path, wholetext=True, recursiveFileLookup=True)
             .transform(self._add_filename_from_path)
             .select(
                 "filename",
                 f.size(f.split("value", ' ')).alias("word_count")))
         tags_df = (
-            self.spark.read.text(self.notes_path, wholetext=False)
-            .filter(f.col("value").rlike("Tags::"))
+            self.spark.read.text(
+                self.notes_path, wholetext=False, recursiveFileLookup=True)
+            .filter(f.col("value").rlike(".* Tags::"))
             .transform(self._add_filename_from_path)
             .transform(self._extract_clean_tags_into_array)
             .transform(self._move_note_type_tag_to_own_column)
@@ -118,7 +123,8 @@ class StatsCalculator():
                 "tags",
                 f.year("date").alias("year"),
                 f.month("date").alias("month"))
-            .write.format("hive").mode("append").partitionBy("year", "month").saveAsTable("obsidian_metrics_db.files_metrics"))
+            .write.format("hive").mode("append").partitionBy("year", "month")
+            .saveAsTable(f"obsidian_metrics_db.{self.notes_folder_name}_metrics"))
 
     def _get_metrics_by_type(self, file_metrics_df):
         return (
@@ -141,7 +147,7 @@ class StatsCalculator():
             uniformtext_minsize=8, 
             uniformtext_mode='hide')
         fig.update_traces(texttemplate='%{text}', textposition='outside')
-        fig.write_image(f"{PLOTS_PATH}/{metric}_by_type.svg")
+        fig.write_image(f"{PLOTS_PATH}/{metric}_by_type_for_{self.notes_folder_name}.svg")
 
     def _get_metrics_by_tag(self, file_metrics_df):
         return (
@@ -166,6 +172,7 @@ class StatsCalculator():
         This mechanism allows us to keep the same colors for the same tags in different plots.
         """
         top_10 = df_by_tag.toPandas().sort_values(metric, ascending=False).head(10)
+        top_10.loc[top_10["tag"]== '', "tag"] = "Untagged"
         # Truncate page numbers to 20 characters with ellipsis
         top_10["tag"] = top_10["tag"].apply(lambda x: x[:20] + "..." if len(x) > 20 else x)
         fig = px.bar(top_10, x="tag", y=metric, color="tag", text=metric,
@@ -175,12 +182,12 @@ class StatsCalculator():
         fig.update_xaxes(tickfont=dict(size=10))
         if previous_color_map:
             fig.for_each_trace(lambda trace: trace.update(marker_color=previous_color_map.get(trace.name, trace.marker.color)))
-        fig.write_image(f"{PLOTS_PATH}/tags_by_{metric}.svg")
+        fig.write_image(f"{PLOTS_PATH}/tags_by_{metric}_for_{self.notes_folder_name}.svg")
         return dict(zip(top_10["tag"], px.colors.qualitative.Set3))
 
     def _get_top_5_word_count_diff_7_days(self):
         df = (
-            self.spark.read.table("files_metrics")
+            self.spark.read.table(f'{self.notes_folder_name}_metrics')
             .filter(f.col("date") >= (f.current_date() - f.expr("interval 14 days")))
             .select(
                 "date",
@@ -211,8 +218,7 @@ class StatsCalculator():
             fig.for_each_trace(lambda t: t.update(marker_color=color_map.get(t.name, t.marker.color)))
         fig.write_image(f"{PLOTS_PATH}/words_by_tag_last_7_days.svg")
 
-
-if __name__ == "__main__":
+def get_spark_instance():
     spark = (
         SparkSession.builder
         .master("local[*]")
@@ -224,7 +230,12 @@ if __name__ == "__main__":
     # Not entirely sure yet why I need this but related to 'saveAsTable' below.
     spark.sql("set hive.exec.dynamic.partition.mode=nonstrict") 
     spark.sql("use obsidian_metrics_db")
+    return spark
 
+if __name__ == "__main__":
+    spark = get_spark_instance()
     StatsCalculator(spark, NOTES_PATH).run()
+    StatsCalculator(spark, RAW_HIGHLIGHTS_PATH).run()
+
 
    
