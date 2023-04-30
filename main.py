@@ -216,7 +216,7 @@ class StatsCalculator():
         if color_map:
             # For each page that is also on the previous graph, use that same color. If it wasn´t there, use the default color
             fig.for_each_trace(lambda t: t.update(marker_color=color_map.get(t.name, t.marker.color)))
-        fig.write_image(f"{PLOTS_PATH}/words_by_tag_last_7_days.svg")
+        fig.write_image(f"{PLOTS_PATH}/words_by_tag_last_7_days_for_{self.notes_folder_name}.svg")
 
 def get_spark_instance():
     spark = (
