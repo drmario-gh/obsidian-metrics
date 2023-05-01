@@ -187,7 +187,7 @@ class StatsCalculator():
 
     def _get_top_5_word_count_diff_7_days(self):
         df = self._get_word_count_diff_14_days()
-        df["previous_day"] = df.groupby("tag")["total_words"].shift(1)
+        df["previous_day"] = df.groupby("tag")["total_words"].shift(1).fillna(0)
         df = df[df["date"] >= (datetime.datetime.now().date() - pd.Timedelta(days=7))]
         df["diff"] = df["total_words"] - df["previous_day"]
         return (
