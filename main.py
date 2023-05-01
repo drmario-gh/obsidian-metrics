@@ -186,7 +186,18 @@ class StatsCalculator():
         return dict(zip(top_10["tag"], px.colors.qualitative.Set3))
 
     def _get_top_5_word_count_diff_7_days(self):
-        df = (
+        df = self._get_word_count_diff_14_days()
+        df["previous_day"] = df.groupby("tag")["total_words"].shift(1)
+        df = df[df["date"] >= (datetime.datetime.now().date() - pd.Timedelta(days=7))]
+        df["diff"] = df["total_words"] - df["previous_day"]
+        return (
+            df.groupby("tag")['diff'].sum().sort_values(ascending=False).head(5).reset_index())
+    
+    def _get_word_count_diff_14_days(self):
+        """
+        This is useful to debug weird counts from a Jupyter notebook
+        """
+        return (
             self.spark.read.table(f'{self.notes_folder_name}_metrics')
             .filter(f.col("date") >= (f.current_date() - f.expr("interval 14 days")))
             .select(
@@ -197,11 +208,6 @@ class StatsCalculator():
             .agg(f.sum("word_count").alias("total_words"))
             .orderBy("tag", "date")
             .toPandas())
-        df["previous_day"] = df.groupby("tag")["total_words"].shift(1)
-        df = df[df["date"] >= (datetime.datetime.now().date() - pd.Timedelta(days=7))]
-        df["diff"] = df["total_words"] - df["previous_day"]
-        return (
-            df.groupby("tag")['diff'].sum().sort_values(ascending=False).head(5).reset_index())
         
         
     def _plot_top_5_word_count_diff_7_days(self, df_diff_7_days, color_map=None):
