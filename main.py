@@ -212,6 +212,7 @@ class StatsCalculator():
         
     def _plot_top_5_word_count_diff_7_days(self, df_diff_7_days, color_map=None):
         df_diff_7_days.loc[df_diff_7_days["tag"]== '', "tag"] = "Untagged"
+        df_diff_7_days["tag"] = df_diff_7_days["tag"].apply(lambda x: x[:20] + "..." if len(x) > 20 else x)
         fig = px.bar(df_diff_7_days, x="tag", y="diff", color="tag", text="diff")
         fig.update_traces(texttemplate='%{text}', textposition='outside')
         fig.update_layout(
