@@ -3,6 +3,7 @@ import pyspark.sql.functions as f
 import plotly.express as px
 import datetime
 import pandas as pd
+import hashlib
 
 DEVCONTAINER_WORKSPACE_PATH = '/home/jovyan/work'
 DB_PATH = f'{DEVCONTAINER_WORKSPACE_PATH}/spark-warehouse'
@@ -15,6 +16,14 @@ AVG_WORDS_PER_MINUTE_ADULTS = 238  #https://www.sciencedirect.com/science/articl
 NOTE_TYPES = [
     '✍️OwnPosts', '📝CuratedNotes', '✒️SummarizedBooks', '🗞️Articles', '📚Books', 
     '🎙️Podcasts', '📜Papers', '🗣️Talks', '🦜FavoriteQuotes']
+
+
+def get_palette_color_from_tag(tag):
+    """
+    Maps any string to a hex color using md5 to make it consistent across executions.
+    """
+    return '#' + hashlib.md5(tag.encode('utf-8')).hexdigest()[:6]
+
 
 class StatsCalculator():
     def __init__(self, spark_obj, notes_path):
@@ -53,8 +62,8 @@ class StatsCalculator():
         self._plot_metric_by_type('total_pages', metrics_by_type_df)
 
         metrics_by_tag_df = self._get_metrics_by_tag(metrics_df)
-        color_map = self._plot_top_10_metric_by_tag('reading_hours', metrics_by_tag_df)
-        self._plot_top_10_metric_by_tag('total_pages', metrics_by_tag_df, color_map)
+        self._plot_top_10_metric_by_tag('reading_hours', metrics_by_tag_df)
+        self._plot_top_10_metric_by_tag('total_pages', metrics_by_tag_df)
 
         df_diff = self._get_top_5_word_count_diff_7_days()
         self._plot_top_5_word_count_diff_7_days(df_diff)
@@ -141,12 +150,15 @@ class StatsCalculator():
     
     def _plot_metric_by_type(self, metric, df_by_type):
         df = df_by_type.toPandas()
-        fig = px.bar(df, x="type", y=metric, color="type", text=metric)
+        fig = px.bar(df, x="type", y=metric, text=metric)
         fig.update_layout(
             title_text=f"Total {metric}: {df[metric].sum():.2f}",
             uniformtext_minsize=8, 
-            uniformtext_mode='hide')
-        fig.update_traces(texttemplate='%{text}', textposition='outside')
+            uniformtext_mode='hide',
+            showlegend=False)
+        fig.update_traces(
+            texttemplate='%{text}', 
+            textposition='outside')
         fig.write_image(f"{PLOTS_PATH}/{metric}_by_type_for_{self.notes_folder_name}.svg")
 
     def _get_metrics_by_tag(self, file_metrics_df):
@@ -156,7 +168,7 @@ class StatsCalculator():
                 f.explode("tags").alias("tag"),
                 "filename",
                 "word_count")
-            .groupBy("tag")
+            .groupBy(f.lower(f.col("tag")).alias("tag"))
             .agg(
                 f.sum("word_count").alias("total_words"),
                 f.count("filename").alias("total_pages"))
@@ -165,25 +177,26 @@ class StatsCalculator():
                 f.round(f.col("total_words") / AVG_WORDS_PER_MINUTE_ADULTS / 60, 2).alias("reading_hours"),
                 "total_pages")
             .orderBy("reading_hours", ascending=False))
-    
-    def _plot_top_10_metric_by_tag(self, metric, df_by_tag, previous_color_map=None):
+        
+    def _plot_top_10_metric_by_tag(self, metric, df_by_tag):
         """
         We return a colormap to be used in the next calls to this function as the `previous_color_map`.
         This mechanism allows us to keep the same colors for the same tags in different plots.
         """
         top_10 = df_by_tag.toPandas().sort_values(metric, ascending=False).head(10)
         top_10.loc[top_10["tag"]== '', "tag"] = "Untagged"
-        # Truncate page numbers to 20 characters with ellipsis
         top_10["tag"] = top_10["tag"].apply(lambda x: x[:20] + "..." if len(x) > 20 else x)
-        fig = px.bar(top_10, x="tag", y=metric, color="tag", text=metric,
-            color_discrete_sequence=px.colors.qualitative.Set3)
+        top_10["color"] = top_10["tag"].apply(lambda x: get_palette_color_from_tag(x))
+
+        fig = px.bar(top_10, x="tag", y=metric, color="color", text=metric, 
+                     color_discrete_sequence=top_10["color"].tolist(), category_orders={"tag": top_10["tag"]},)
         fig.update_traces(texttemplate='%{text}', textposition='outside')
-        fig.update_layout(showlegend=False, title_text=f"Top 10 tags by {metric}")
+        fig.update_layout(
+            showlegend=False, title_text=f"Top 10 tags by {metric}",
+        )
         fig.update_xaxes(tickfont=dict(size=10))
-        if previous_color_map:
-            fig.for_each_trace(lambda trace: trace.update(marker_color=previous_color_map.get(trace.name, trace.marker.color)))
         fig.write_image(f"{PLOTS_PATH}/tags_by_{metric}_for_{self.notes_folder_name}.svg")
-        return dict(zip(top_10["tag"], px.colors.qualitative.Set3))
+        return fig
 
     def _get_top_5_word_count_diff_7_days(self):
         df = self._get_word_count_diff_14_days()
@@ -193,7 +206,7 @@ class StatsCalculator():
         return (
             df.groupby("tag")['diff'].sum().sort_values(ascending=False).head(5).reset_index())
     
-    def _get_word_count_diff_14_days(self):
+    def _get_records_from_14_days(self):
         """
         This is useful to debug weird counts from a Jupyter notebook
         """
@@ -202,28 +215,42 @@ class StatsCalculator():
             .filter(f.col("date") >= (f.current_date() - f.expr("interval 14 days")))
             .select(
                 "date",
+                "filename",
                 "word_count",
-                f.explode(f.col("tags")).alias("tag"))
-            .groupBy(f.col("date"), f.col("tag"))
+                f.explode(f.col("tags")).alias("tag")))
+    
+    def _get_word_count_diff_14_days(self):
+        """
+        This is useful to debug weird counts from a Jupyter notebook.
+        I need to groupby by lowercasing the tag because Readwise is inconsistent 
+        with the case of my tags. The good thing is that this does not cause any problem
+        in Obsidian since wikilinks are case insensitive.
+        """
+        return (
+            self._get_records_from_14_days()
+            .groupBy(f.col("date"), f.lower(f.col("tag")).alias("tag"))
             .agg(f.sum("word_count").alias("total_words"))
             .orderBy("tag", "date")
             .toPandas())
         
         
-    def _plot_top_5_word_count_diff_7_days(self, df_diff_7_days, color_map=None):
+    def _plot_top_5_word_count_diff_7_days(self, df_diff_7_days):
         df_diff_7_days.loc[df_diff_7_days["tag"]== '', "tag"] = "Untagged"
         df_diff_7_days["tag"] = df_diff_7_days["tag"].apply(lambda x: x[:20] + "..." if len(x) > 20 else x)
-        fig = px.bar(df_diff_7_days, x="tag", y="diff", color="tag", text="diff")
-        fig.update_traces(texttemplate='%{text}', textposition='outside')
+        df_diff_7_days["color"] = df_diff_7_days["tag"].apply(lambda x: get_palette_color_from_tag(x))
+        fig = px.bar(df_diff_7_days, x="tag", y="diff", text="diff", color="color", 
+                     color_discrete_sequence=df_diff_7_days["color"], category_orders={"tag": df_diff_7_days["tag"]})
+        fig.update_traces(
+            texttemplate='%{text}',
+            textposition='outside')
         fig.update_layout(
             uniformtext_minsize=8, uniformtext_mode='hide',
             showlegend=False,
-            title_text=f"Top 5 tags by words added in the last 7 days")
+            title_text=f"Top 5 tags by words added in the last 7 days",
+            xaxis_tickangle=30)
         fig.update_xaxes(tickfont=dict(size=10))
-        if color_map:
-            # For each page that is also on the previous graph, use that same color. If it wasn´t there, use the default color
-            fig.for_each_trace(lambda t: t.update(marker_color=color_map.get(t.name, t.marker.color)))
         fig.write_image(f"{PLOTS_PATH}/words_by_tag_last_7_days_for_{self.notes_folder_name}.svg")
+        return fig
 
 def get_spark_instance():
     spark = (
