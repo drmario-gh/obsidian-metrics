@@ -1,6 +1,7 @@
-PAGES_VAULT_PATH = "/Users/mlopez/Documents/second_brain/pages"
-RAW_HIGHLIGHTS_PATH = "/Users/mlopez/Documents/second_brain/raw highlights"
-ASSETS_VAULT_PATH = "/Users/mlopez/Documents/second_brain/assets"
+VAULT_PATH = "/mnt/c/Users/mario/Documents/second_brain"
+PAGES_VAULT_PATH = "${VAULT_PATH}/pages"
+RAW_HIGHLIGHTS_PATH = "${VAULT_PATH}/raw highlights"
+ASSETS_VAULT_PATH = "${VAULT_PATH}/assets"
 UID := $(shell id -u)
 
 .PHONY: start copy-vault-pages copy-stats-back
@@ -17,9 +18,11 @@ start:
 	  custom-all-spark-notebook:2023-03-06
 
 copy-vault-pages:
+	rm -rf pages
 	cp -r ${PAGES_VAULT_PATH} .
 
 copy-vault-raw-highlights:
+	rm -rf raw\ highlights
 	cp -r ${RAW_HIGHLIGHTS_PATH} .
 
 compute-daily-stats:
