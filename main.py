@@ -67,7 +67,9 @@ class StatsCalculator():
 
         df_diff = self._get_top_5_word_count_diff_7_days()
         self._plot_top_5_word_count_diff_7_days(df_diff)
-
+        
+        df_hours_by_day = self._get_reading_hours_per_day()
+        self._plot_reading_hours_per_day(df_hours_by_day)
 
     def _get_note_metrics(self):
         words_df = (
@@ -251,6 +253,24 @@ class StatsCalculator():
         fig.update_xaxes(tickfont=dict(size=10))
         fig.write_image(f"{PLOTS_PATH}/words_by_tag_last_7_days_for_{self.notes_folder_name}.svg")
         return fig
+    
+    def _get_reading_hours_per_day(self):
+        return (
+            spark.read.table(f'{self.notes_folder_name}_metrics')
+            .groupBy('date')
+            .agg(f.sum('word_count').alias('total_words'))
+            .select(
+                'date', 
+                f.round(f.col("total_words") / AVG_WORDS_PER_MINUTE_ADULTS / 60, 2).alias("reading_hours"))
+            .orderBy('date'))
+    
+    def _plot_reading_hours_per_day(self, df):
+        df = df.toPandas()
+        fig = px.line(df, x='date', y='reading_hours', title=f'Total reading hours in {self.notes_folder_name} per day')
+        fig.update_xaxes(title_text='')
+        fig.update_yaxes(title_text='')
+        fig.write_image(f"{PLOTS_PATH}/reading_hours_per_day_for_{self.notes_folder_name}.svg")
+
 
 def get_spark_instance():
     spark = (
