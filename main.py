@@ -26,10 +26,11 @@ def get_palette_color_from_tag(tag):
 
 
 class StatsCalculator():
-    def __init__(self, spark_obj, notes_path):
+    def __init__(self, spark_obj, notes_path, save_to_db=True):
         self.spark = spark_obj
         self.notes_path = notes_path
         self.notes_folder_name = notes_path.split('/')[-1].replace(' ', '_')
+        self.save_to_db = save_to_db
         
     def create_hive_db_and_table_if_not_exists(self):
         """
@@ -55,7 +56,7 @@ class StatsCalculator():
     def run(self):
         self.create_hive_db_and_table_if_not_exists()
         metrics_df = self._get_note_metrics()
-        self._save_to_hive(metrics_df)
+        if self.save_to_db: self._save_to_hive(metrics_df)
 
         metrics_by_type_df = self._get_metrics_by_type(metrics_df)
         self._plot_metric_by_type('reading_hours', metrics_by_type_df)
@@ -106,7 +107,8 @@ class StatsCalculator():
         df[[filename, value]], with value containing "Tags::..."
         """
         def _clean_up_tag(tag_col):
-            return f.trim(f.regexp_replace(tag_col, "\[\[|\]\]|\#|\.$", ""))
+            clean_col = f.trim(f.regexp_replace(tag_col, "\[\[|\]\]|\#", ""))
+            return f.regexp_replace(clean_col, "\.$|\,$", "")
         
         return (
             df_taglines
