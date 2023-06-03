@@ -4,6 +4,8 @@ import plotly.express as px
 import datetime
 import pandas as pd
 import hashlib
+import sys
+
 
 DEVCONTAINER_WORKSPACE_PATH = '/home/jovyan/work'
 DB_PATH = f'{DEVCONTAINER_WORKSPACE_PATH}/spark-warehouse'
@@ -106,16 +108,16 @@ class StatsCalculator():
         """
         df[[filename, value]], with value containing "Tags::..."
         """
-        def _clean_up_tag(tag_col):
-            clean_col = f.trim(f.regexp_replace(tag_col, "\[\[|\]\]|\#", ""))
-            return f.regexp_replace(clean_col, "\.$|\,$", "")
-        
         return (
             df_taglines
             .select("*", f.split("value", "::")[1].alias("tags"))
             .withColumn("tags", f.split("tags", "\s*,\s*\[\[|\s*,\s*\#"))
-            .withColumn("tags", f.transform("tags", _clean_up_tag).alias("tags")))
+            .withColumn("tags", f.transform("tags", self._clean_up_tag).alias("tags")))
     
+    def _clean_up_tag(self, tag):
+        clean_tag = f.trim(f.regexp_replace(tag, "\[\[|\]\]|\#", ""))
+        return f.regexp_replace(clean_tag, "\.$|\,$", "")
+        
     def _move_note_type_tag_to_own_column(self, df_tagarray):
         """
         df[[filename, tags]], with tags being an array of strings.
@@ -217,6 +219,9 @@ class StatsCalculator():
         return (
             self.spark.read.table(f'{self.notes_folder_name}_metrics')
             .filter(f.col("date") >= (f.current_date() - f.expr("interval 14 days")))
+            # ToDo: I could get rid of this by just doing it once and saving the data
+            # but I'll leave it for some time in case I find new cases to correct
+            .withColumn("tags", f.transform("tags", self._clean_up_tag).alias("tags"))
             .select(
                 "date",
                 "filename",
@@ -289,9 +294,10 @@ def get_spark_instance():
     return spark
 
 if __name__ == "__main__":
+    save_to_db = True
+    if len(sys.argv) > 1:
+        save_to_db = sys.argv[1] != "--no-save"
+
     spark = get_spark_instance()
-    StatsCalculator(spark, NOTES_PATH).run()
-    StatsCalculator(spark, RAW_HIGHLIGHTS_PATH).run()
-
-
-   
+    StatsCalculator(spark, NOTES_PATH, save_to_db).run()
+    StatsCalculator(spark, RAW_HIGHLIGHTS_PATH, save_to_db).run()

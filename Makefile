@@ -33,6 +33,15 @@ compute-daily-stats:
 	  --group-add users \
 	  -it custom-all-spark-notebook:2023-03-06  start.sh python work/main.py
 
+compute-daily-stats-no-save:
+	docker run --rm --name spark-notebook \
+	  -p 8888:8888 \
+	  -v "${PWD}":/home/jovyan/work \
+	  --user ${UID} \
+	  --group-add users \
+	  -it custom-all-spark-notebook:2023-03-06  start.sh python work/main.py --no-save
+
+
 copy-stats-back:
 	cp assets/* ${ASSETS_VAULT_PATH}
 
@@ -40,4 +49,10 @@ daily-cronjob:
 	make copy-vault-pages
 	make copy-vault-raw-highlights
 	make compute-daily-stats
+	make copy-stats-back
+
+run-no-save:
+	make copy-vault-pages
+	make copy-vault-raw-highlights
+	make compute-daily-stats-no-save
 	make copy-stats-back
